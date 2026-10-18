@@ -21,26 +21,49 @@ def send_message(text):
     requests.post(url, json={'chat_id': TELEGRAM_CHAT_ID, 'text': text, 'parse_mode': 'Markdown'})
 
 def fetch_all_listings():
-    # Triggers Apify's pre-built Carousell scraper
-    url = f"https://api.apify.com/v2/acts/automation-lab~carousell-listings-scraper/run-sync-get-dataset-items?token={APIFY_API_TOKEN}"
+    # Use the exact Apify endpoint for automation-lab
+    url = f"https://api.apify.com/v2/acts/automation-lab~carousell-listings-scraper/runs?token={APIFY_API_TOKEN}"
     
-    # Pass exact Carousell URLs with sort_by=3 so it only scrapes recent items
-    start_urls = [{"url": f"https://www.carousell.sg/search/{requests.utils.quote(kw)}?sort_by=3"} for kw in KEYWORDS]
-    
+    # We pass your keywords exactly as Apify expects them
     payload = {
-        "startUrls": start_urls,
-        "maxItems": 10, # Fetch top 10 recent items per keyword
+        "keywords": KEYWORDS,
+        "market": "sg",
+        "maxItems": 10,
         "proxyType": "residential"
     }
     
     try:
-        response = requests.post(url, json=payload, timeout=300) 
+        # Start the run
+        print("Sending request to Apify...")
+        response = requests.post(url, json=payload, timeout=60)
+        
         if response.status_code in [200, 201]:
-            return response.json()
+            run_data = response.json()
+            run_id = run_data['data']['id']
+            dataset_id = run_data['data']['defaultDatasetId']
+            
+            print(f"Apify run started! Run ID: {run_id}. Waiting for completion...")
+            
+            # Wait for Apify to finish scraping (check every 15 seconds)
+            while True:
+                status_url = f"https://api.apify.com/v2/actor-runs/{run_id}?token={APIFY_API_TOKEN}"
+                status_resp = requests.get(status_url).json()
+                status = status_resp['data']['status']
+                
+                if status == 'SUCCEEDED':
+                    print("Apify scrape complete! Fetching data...")
+                    dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items?token={APIFY_API_TOKEN}"
+                    return requests.get(dataset_url).json()
+                elif status in ['FAILED', 'ABORTED', 'TIMED-OUT']:
+                    print(f"Apify run failed with status: {status}")
+                    return []
+                    
+                time.sleep(15)
         else:
             print(f"Apify Error: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"Request Error: {e}")
+        
     return []
 
 def run_bot():
@@ -50,6 +73,7 @@ def run_bot():
     print("Running initial silent scan...")
     items = fetch_all_listings()
     for item in items:
+        # The Apify Carousell scraper returns 'listingId'
         if 'listingId' in item:
             seen_listings.add(item['listingId'])
             
@@ -65,21 +89,4 @@ def run_bot():
                 if listing_id not in seen_listings:
                     seen_listings.add(listing_id)
                     
-                    title = item.get('title', 'New Item')
-                    price = item.get('price', '')
-                    link = item.get('listingUrl', '')
-                    
-                    msg = f"🚨 *New Listing Detected!*\n*Title:* {title}\n*Price:* {price}\n🔗 [View on Carousell]({link})"
-                    send_message(msg)
-
-# Start the continuous background loop
-threading.Thread(target=run_bot, daemon=True).start()
-
-# Start the Dummy Web Server to keep Render happy
-@app.route('/')
-def home():
-    return "Carousell Bot is running on Apify!"
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+                    # Extract the clean data provided by Ap
