@@ -9,10 +9,9 @@ TELEGRAM_BOT_TOKEN = '8958780535:AAHvyyBxIIEy1MJTX4se0aTV1v3jd8kpU6Q'
 TELEGRAM_CHAT_ID = '402777873'
 APIFY_API_TOKEN = 'apify_api_GbQVxB1a8AJ1rNkk2AlefBEliToLj90lzV8j'
 
-# Keywords to monitor
 KEYWORDS = ['ntuc', 'sheng siong', 'trip', 'klook', 'dairy farm', 'fairprice', 'voucher', 'giant', 'vouchers']
 
-# Set to 15 hours (54000 seconds)
+# Set to 15 hours
 POLL_INTERVAL = 54000  
 # ============================================
 
@@ -28,7 +27,7 @@ def fetch_all_listings():
     payload = {
         "keywords": KEYWORDS,
         "market": "sg",
-        "maxItems": 10,
+        "maxItems": 200,  # Increased to 200 items per scan
         "proxyType": "residential"
     }
     
@@ -71,34 +70,11 @@ def run_bot():
                     
                     msg = f"🚨 *New Listing!*\n*Title:* {title}\n*Price:* {price}\n🔗 [View on Carousell]({link})"
                     send_message(msg)
+                    time.sleep(1) # Protects bot from Telegram spam filters
                     
         time.sleep(POLL_INTERVAL)
 
 def run_manual_scan():
     send_message("🔍 *Manual scan initiated...*")
     items = fetch_all_listings()
-    for item in items:
-        if 'listingId' in item:
-            listing_id = item['listingId']
-            if listing_id not in seen_listings:
-                seen_listings.add(listing_id)
-                title = item.get('title', 'New Item')
-                price = item.get('price', '')
-                link = item.get('listingUrl', '')
-                send_message(f"🚨 *Manual Scan Match!*\n*Title:* {title}\n*Price:* {price}\n🔗 [View on Carousell]({link})")
-    send_message("✅ Manual scan complete.")
-
-threading.Thread(target=run_bot, daemon=True).start()
-
-@app.route('/')
-def home():
-    return "Carousell Bot is running on Apify!"
-
-@app.route('/scan')
-def manual_scan_route():
-    threading.Thread(target=run_manual_scan).start()
-    return "Scan started", 200
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    for
