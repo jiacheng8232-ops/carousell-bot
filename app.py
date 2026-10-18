@@ -2,77 +2,84 @@ import os
 import time
 import requests
 import threading
-from bs4 import BeautifulSoup
 from flask import Flask
 
-# === YOUR SETTINGS (KEYS INSERTED) ===
+# === YOUR SETTINGS ===
 TELEGRAM_BOT_TOKEN = '8958780535:AAHvyyBxIIEy1MJTX4se0aTV1v3jd8kpU6Q'
 TELEGRAM_CHAT_ID = '402777873'
-SCRAPER_API_KEY = 'c059b91623176fb7fe6318867ffde831'
+APIFY_API_TOKEN = 'apify_api_GbQVxB1a8AJ1rNkk2AlefBEliToLj90lzV8j'
 
-KEYWORDS = ['ntuc', 'sheng siong', 'trip', 'klook', 'dairy farm']
-POLL_INTERVAL = 13000  # Checks every ~3.6 hours
+KEYWORDS = ['ntuc', 'sheng siong', 'trip', 'klook', 'dairy farm', 'fairprice']
+POLL_INTERVAL = 13000  # Timer in seconds (13000 = ~3.6 hours)
 # ============================================
 
 app = Flask(__name__)
 seen_listings = set()
 
-# 1. The Dummy Web Server
-@app.route('/')
-def home():
-    return "Carousell Bot is awake and running!"
-
-# 2. Simple Telegram Sender
 def send_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     requests.post(url, json={'chat_id': TELEGRAM_CHAT_ID, 'text': text, 'parse_mode': 'Markdown'})
 
-# 3. The Scraping Logic
-def fetch_listings(keyword):
-    url = f"https://www.carousell.sg/search/{requests.utils.quote(keyword)}?sort_by=3"
+def fetch_all_listings():
+    # Triggers Apify's pre-built Carousell scraper
+    url = f"https://api.apify.com/v2/acts/automation-lab~carousell-listings-scraper/run-sync-get-dataset-items?token={APIFY_API_TOKEN}"
+    
+    # Pass exact Carousell URLs with sort_by=3 so it only scrapes recent items
+    start_urls = [{"url": f"https://www.carousell.sg/search/{requests.utils.quote(kw)}?sort_by=3"} for kw in KEYWORDS]
+    
+    payload = {
+        "startUrls": start_urls,
+        "maxItems": 10, # Fetch top 10 recent items per keyword
+        "proxyType": "residential"
+    }
+    
     try:
-        response = requests.get('https://api.scraperapi.com', params={'api_key': SCRAPER_API_KEY, 'url': url}, timeout=30)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            listings = []
-            for a in soup.find_all('a', href=True):
-                if '/p/' in a['href']:
-                    listing_id = a['href'].strip('/').split('-')[-1]
-                    if listing_id.isdigit():
-                        listings.append({'id': listing_id, 'link': "https://www.carousell.sg" + a['href']})
-            return listings
+        response = requests.post(url, json=payload, timeout=300) 
+        if response.status_code in [200, 201]:
+            return response.json()
+        else:
+            print(f"Apify Error: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Request Error: {e}")
     return []
 
-# 4. The Continuous Background Loop
 def run_bot():
     print("Bot started...")
-    send_message(f"✅ *Bot is active!*\nMonitoring keywords: {', '.join(k.title() for k in KEYWORDS)}")
+    send_message(f"✅ *Apify Bot is active!*\nMonitoring: {', '.join(k.title() for k in KEYWORDS)}")
     
-    test_sent = False
-    
-    for kw in KEYWORDS: 
-        for item in fetch_listings(kw):
-            # Send exactly ONE test link as proof it is working
-            if test_sent == False:
-                send_message(f"🧪 *TEST SCAN SUCCESSFUL!*\n*Found a recent item for:* {kw.title()}\n🔗 [View Here]({item['link']})")
-                test_sent = True
-                
-            seen_listings.add(item['id'])
+    print("Running initial silent scan...")
+    items = fetch_all_listings()
+    for item in items:
+        if 'listingId' in item:
+            seen_listings.add(item['listingId'])
             
     while True:
         time.sleep(POLL_INTERVAL)
-        for kw in KEYWORDS:
-            for item in fetch_listings(kw):
-                if item['id'] not in seen_listings:
-                    seen_listings.add(item['id'])
-                    send_message(f"🚨 *New Listing!*\n*Search:* {kw.title()}\n🔗 [View Here]({item['link']})")
+        print("Checking for new items...")
+        items = fetch_all_listings()
+        
+        for item in items:
+            if 'listingId' in item:
+                listing_id = item['listingId']
+                
+                if listing_id not in seen_listings:
+                    seen_listings.add(listing_id)
+                    
+                    title = item.get('title', 'New Item')
+                    price = item.get('price', '')
+                    link = item.get('listingUrl', '')
+                    
+                    msg = f"🚨 *New Listing Detected!*\n*Title:* {title}\n*Price:* {price}\n🔗 [View on Carousell]({link})"
+                    send_message(msg)
 
-# Start the background loop
+# Start the continuous background loop
 threading.Thread(target=run_bot, daemon=True).start()
 
-# Start the Web Server
+# Start the Dummy Web Server to keep Render happy
+@app.route('/')
+def home():
+    return "Carousell Bot is running on Apify!"
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
