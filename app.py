@@ -89,4 +89,45 @@ def run_bot():
                 if listing_id not in seen_listings:
                     seen_listings.add(listing_id)
                     
-                    # Extract the clean data provided by Ap
+                    # Extract the clean data provided by Apify
+                    title = item.get('title', 'New Item')
+                    price = item.get('price', '')
+                    link = item.get('listingUrl', '')
+                    
+                    msg = f"🚨 *New Listing Detected!*\n*Title:* {title}\n*Price:* {price}\n🔗 [View on Carousell]({link})"
+                    send_message(msg)
+
+# Manual scan triggered via web URL
+def run_manual_scan():
+    send_message("🔍 *Manual scan initiated...* Fetching latest listings.")
+    items = fetch_all_listings()
+    new_found = 0
+    for item in items:
+        if 'listingId' in item:
+            listing_id = item['listingId']
+            if listing_id not in seen_listings:
+                seen_listings.add(listing_id)
+                new_found += 1
+                title = item.get('title', 'New Item')
+                price = item.get('price', '')
+                link = item.get('listingUrl', '')
+                send_message(f"🚨 *Manual Scan Match!*\n*Title:* {title}\n*Price:* {price}\n🔗 [View on Carousell]({link})")
+    if new_found == 0:
+        send_message("✅ Manual scan complete. No new listings found since last check.")
+
+# Background Thread
+threading.Thread(target=run_bot, daemon=True).start()
+
+# Start the Web Server
+@app.route('/')
+def home():
+    return "Carousell Bot is running on Apify!"
+
+@app.route('/scan')
+def manual_scan_route():
+    threading.Thread(target=run_manual_scan).start()
+    return "Manual scan initiated! Check Telegram shortly.", 200
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
