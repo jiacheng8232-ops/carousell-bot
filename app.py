@@ -48,6 +48,7 @@ def fetch_listings(keyword):
 # 4. The Continuous Background Loop
 def run_bot():
     print("Bot started...")
+    send_message(f"✅ *Bot is active!*\nMonitoring keywords: {', '.join(k.title() for k in KEYWORDS)}\nChecking every 3.6 hours.")
     for kw in KEYWORDS: 
         for item in fetch_listings(kw):
             seen_listings.add(item['id'])
