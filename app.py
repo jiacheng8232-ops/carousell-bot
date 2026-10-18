@@ -48,9 +48,17 @@ def fetch_listings(keyword):
 # 4. The Continuous Background Loop
 def run_bot():
     print("Bot started...")
-    send_message(f"✅ *Bot is active!*\nMonitoring keywords: {', '.join(k.title() for k in KEYWORDS)}\nChecking every 3.6 hours.")
+    send_message(f"✅ *Bot is active!*\nMonitoring keywords: {', '.join(k.title() for k in KEYWORDS)}")
+    
+    test_sent = False
+    
     for kw in KEYWORDS: 
         for item in fetch_listings(kw):
+            # Send exactly ONE test link as proof it is working
+            if test_sent == False:
+                send_message(f"🧪 *TEST SCAN SUCCESSFUL!*\n*Found a recent item for:* {kw.title()}\n🔗 [View Here]({item['link']})")
+                test_sent = True
+                
             seen_listings.add(item['id'])
             
     while True:
